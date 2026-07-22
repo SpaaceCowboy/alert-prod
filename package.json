@@ -1,0 +1,22 @@
+{
+    "name": "vendor-guardian",
+    "private": true,
+    "packageManager": "npm@9.2.0",
+    "workspaces": [
+      "packages/*",
+      "apps/*"
+    ],
+    "scripts": {
+      "build": "npm run build --workspaces --if-present",
+      "test": "npm run test --workspaces --if-present",
+      "report": "tsx scripts/report.ts"
+    },
+    "devDependencies": {
+      "@types/node": "^20.17.0",
+      "@types/pg": "^8.11.10",
+      "pg": "^8.13.1",
+      "tsx": "^4.19.2",
+      "typescript": "^5.7.2"
+    }
+  }
+  
