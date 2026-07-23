@@ -5,6 +5,9 @@ export interface VendorConfig {
   timeoutMs: number;
 }
 
+export const isVendorEnabled = (vendor: Vendor): boolean =>
+  vendor !== 'b2broker' || process.env.B2BROKER_ENABLED === 'true';
+
 const required = (name: string): string => {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required`);
@@ -26,6 +29,9 @@ export const getVendorConfig = (vendor: Vendor): VendorConfig => {
     case 'coinigo':
       return { baseURL: required('COINIGO_BASE_URL'), timeoutMs: timeout('COINIGO_TIMEOUT_MS', 15_000) };
     case 'b2broker':
+      if (!isVendorEnabled(vendor)) {
+        throw new Error('B2BROKER is disabled; set B2BROKER_ENABLED=true only after its API contract is verified');
+      }
       return { baseURL: required('B2BROKER_BASE_URL'), timeoutMs: timeout('B2BROKER_TIMEOUT_MS', 15_000) };
   }
 };
