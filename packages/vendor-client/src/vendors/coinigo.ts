@@ -1,5 +1,14 @@
 import type { AxiosInstance, AxiosResponse } from 'axios';
-import { constants, createCipheriv, createHmac, publicEncrypt, randomBytes } from 'node:crypto';
+import {
+  constants,
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  createPrivateKey,
+  privateDecrypt,
+  publicEncrypt,
+  randomBytes,
+} from 'node:crypto';
 import { VendorApi } from './base.js';
 
 export interface CoinigoApiResponse<T> { requestId: string; apiVersion?: string | null; data: T }
@@ -25,6 +34,14 @@ export interface CoinigoPayout {
 }
 export interface CoinigoEncryptedPayload { dataEncrypted: string }
 
+type UnknownRecord = Record<string, unknown>;
+const asRecord = (value: unknown): UnknownRecord | undefined =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as UnknownRecord
+    : undefined;
+
+const normalizePem = (pem: string): string => pem.replaceAll('\\n', '\n');
+
 /** HMAC-SHA1 over the exact plaintext JSON, encoded as Base64 per Coinigo v1.6.0. */
 export const createCoinigoPayloadDigest = (digestSecret: string, plaintextJson: string): string =>
   createHmac('sha1', Buffer.from(digestSecret, 'ascii'))
@@ -39,7 +56,7 @@ export const encryptCoinigoPayload = (coinigoPublicKeyPem: string, plaintextJson
   const aesKey = randomBytes(32);
   const iv = randomBytes(16);
   const encryptedKeyAndIv = publicEncrypt(
-    { key: coinigoPublicKeyPem, padding: constants.RSA_PKCS1_PADDING },
+    { key: normalizePem(coinigoPublicKeyPem), padding: constants.RSA_PKCS1_PADDING },
     Buffer.concat([aesKey, iv]),
   );
   if (encryptedKeyAndIv.length !== 256) {
@@ -53,15 +70,80 @@ export const encryptCoinigoPayload = (coinigoPublicKeyPem: string, plaintextJson
   return Buffer.concat([encryptedKeyAndIv, encryptedPayload]).toString('base64');
 };
 
+/** Decrypts Coinigo's observed direct-RSA or hybrid RSA/AES response format. */
+export const decryptCoinigoPayload = (merchantPrivateKeyPem: string, base64Ciphertext: string): string => {
+  const key = createPrivateKey(normalizePem(merchantPrivateKeyPem));
+  const modulusBits = key.asymmetricKeyDetails?.modulusLength;
+  if (!modulusBits || modulusBits % 8 !== 0) throw new Error('Unable to determine Coinigo response RSA block size');
+  const rsaBlockBytes = modulusBits / 8;
+  const raw = Buffer.from(base64Ciphertext, 'base64');
+  if (raw.length < rsaBlockBytes) throw new Error('Coinigo encrypted response is shorter than one RSA block');
+
+  if (raw.length % rsaBlockBytes === 0) {
+    try {
+      const plaintext = Buffer.concat(
+        Array.from({ length: raw.length / rsaBlockBytes }, (_, index) =>
+          privateDecrypt(
+            { key, padding: constants.RSA_PKCS1_PADDING },
+            raw.subarray(index * rsaBlockBytes, (index + 1) * rsaBlockBytes),
+          )),
+      ).toString('utf8');
+      JSON.parse(plaintext);
+      return plaintext;
+    } catch {
+      // The hybrid payload can coincidentally be a multiple of the RSA block size.
+    }
+  }
+
+  const keyAndIv = privateDecrypt(
+    { key, padding: constants.RSA_PKCS1_PADDING },
+    raw.subarray(0, rsaBlockBytes),
+  );
+  if (keyAndIv.length !== 48) throw new Error('Coinigo hybrid response key material must be 48 bytes');
+  const decipher = createDecipheriv('aes-256-cbc', keyAndIv.subarray(0, 32), keyAndIv.subarray(32));
+  return Buffer.concat([decipher.update(raw.subarray(rsaBlockBytes)), decipher.final()]).toString('utf8');
+};
+
+/** Accepts root/nested ciphertext and the observed decrypted `{data: ...}` envelope. */
+export const decodeCoinigoBusinessResponse = <T>(response: unknown, merchantPrivateKeyPem?: string): T => {
+  const root = asRecord(response);
+  const nested = asRecord(root?.data);
+  const ciphertext = typeof root?.dataEncrypted === 'string'
+    ? root.dataEncrypted
+    : typeof nested?.dataEncrypted === 'string'
+      ? nested.dataEncrypted
+      : undefined;
+  if (ciphertext && !merchantPrivateKeyPem) {
+    throw new Error('Merchant private key is required for encrypted Coinigo responses');
+  }
+  const decoded: unknown = ciphertext
+    ? JSON.parse(decryptCoinigoPayload(merchantPrivateKeyPem as string, ciphertext))
+    : response;
+  return (asRecord(decoded)?.data ?? decoded) as T;
+};
+
+export const extractCoinigoAccessToken = (response: unknown): string => {
+  const root = asRecord(response);
+  const nested = asRecord(root?.data);
+  for (const source of [root, nested]) {
+    for (const key of ['token', 'accessToken', 'jwt']) {
+      const value = source?.[key];
+      if (typeof value === 'string' && value.length > 0) return value;
+    }
+  }
+  throw new Error('Coinigo sign-in response did not contain a token');
+};
+
 export class CoinigoApi extends VendorApi {
   public constructor(client: AxiosInstance) { super(client); }
 
-  signIn(clientId: string, clientSecret: string, digestSecret: string): Promise<AxiosResponse<CoinigoApiResponse<CoinigoAccessToken>>> {
-    const plaintext = JSON.stringify({ clientId, clientSecret });
+  signIn(clientId: string, clientSecret: string, digestSecret: string): Promise<AxiosResponse<unknown>> {
+    const credentials = { clientId, clientSecret };
+    const plaintext = JSON.stringify(credentials);
     return this.request('coinigo.auth.sign_in', {
       method: 'POST',
       url: '/ipg/sign-in',
-      data: plaintext,
+      data: { data: credentials },
       headers: {
         'Content-Type': 'application/json',
         'X-Payload-Digest': createCoinigoPayloadDigest(digestSecret, plaintext),
@@ -70,7 +152,7 @@ export class CoinigoApi extends VendorApi {
   }
 
   getWallets(dataEncrypted: string, payloadDigest: string, currencyCode?: string): Promise<AxiosResponse<CoinigoWallet[]>> {
-    return this.request('coinigo.balance.get', {
+    return this.request('coinigo.wallet.experimental', {
       method: 'GET',
       url: '/ipg/crypto/wallets',
       params: { ...(currencyCode ? { currencyCode } : {}), dataEncrypted },
@@ -91,7 +173,7 @@ export class CoinigoApi extends VendorApi {
     return this.request('coinigo.withdrawal.create', {
       method: 'POST',
       url: '/ipg/crypto/pay-outs/requests',
-      data: encryptedPayload,
+      data: { data: encryptedPayload },
       headers: { 'X-Payload-Digest': payloadDigest },
     });
   }
