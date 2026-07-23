@@ -21,7 +21,7 @@ const timeout = (name: string, fallback: number): number => {
 
 export const getVendorConfig = (vendor: Vendor): VendorConfig => {
   switch (vendor) {
-    case 'axios':
+    case 'axis':
       return { baseURL: required('AXIS_BASE_URL'), timeoutMs: timeout('AXIS_TIMEOUT_MS', 10_000) };
     case 'coinigo':
       return { baseURL: required('COINIGO_BASE_URL'), timeoutMs: timeout('COINIGO_TIMEOUT_MS', 15_000) };
