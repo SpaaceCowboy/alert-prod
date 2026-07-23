@@ -68,10 +68,12 @@ checks require `GUARDIAN_CONTROL_TOKEN` as a Bearer token:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $GUARDIAN_CONTROL_TOKEN" http://127.0.0.1:3001/checks/axis/client
-curl -X POST -H "Authorization: Bearer $GUARDIAN_CONTROL_TOKEN" http://127.0.0.1:3001/checks/coinigo/wallets
+curl -X POST -H "Authorization: Bearer $GUARDIAN_CONTROL_TOKEN" http://127.0.0.1:3001/checks/coinigo/wallets-experimental
 ```
 
-Responses expose only success and HTTP status—not vendor response bodies, client data, balances,
+The Coinigo wallet route is explicitly experimental: its path comes from vendor documentation, but
+the working middleware has no retained wire capture proving its request/response envelope. Responses
+expose only success and HTTP status—not vendor response bodies, client data, balances,
 credentials, or wallet addresses. These calls are synthetic and do not replace production baseline
 measurement. B2BROKER is intentionally absent until its official endpoint contract is verified.
 It is disabled by default with `B2BROKER_ENABLED=false`, and its library wrapper exposes no guessed

@@ -4,7 +4,14 @@ import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios';
 import { createVendorClient } from '../core/interceptor.js';
 import { AxisApi, createAxisAuthHeaders, createAxisSignature } from './axis.js';
 import { constants, createDecipheriv, generateKeyPairSync, privateDecrypt } from 'node:crypto';
-import { CoinigoApi, createCoinigoPayloadDigest, encryptCoinigoPayload } from './coinigo.js';
+import {
+  CoinigoApi,
+  createCoinigoPayloadDigest,
+  decodeCoinigoBusinessResponse,
+  decryptCoinigoPayload,
+  encryptCoinigoPayload,
+  extractCoinigoAccessToken,
+} from './coinigo.js';
 import { getVendorConfig, isVendorEnabled } from '../config/vendors.js';
 
 const capturingAdapter = (captured: InternalAxiosRequestConfig[]): AxiosAdapter => async (config) => {
@@ -57,6 +64,12 @@ test('Coinigo uses documented sign-in, wallet and payout paths', async () => {
   assert.equal(captured[3]?.headers.get('X-Payload-Digest'), 'payload-digest');
   assert.equal(createCoinigoPayloadDigest('key', '{"a":1}'), 'tVV6S488wwjRnrT2nzNjkqMe73s=');
   assert.equal(captured[3]?.headers.has('Idempotency-Key'), false);
+  assert.deepEqual(JSON.parse(String(captured[0]?.data)), {
+    data: { clientId: 'client', clientSecret: 'secret' },
+  });
+  assert.deepEqual(JSON.parse(String(captured[3]?.data)), {
+    data: { dataEncrypted: 'encrypted-body' },
+  });
 });
 
 test('Coinigo hybrid encryption uses RSA-2048 PKCS1 v1.5 and AES-256-CBC', () => {
@@ -75,6 +88,21 @@ test('Coinigo hybrid encryption uses RSA-2048 PKCS1 v1.5 and AES-256-CBC', () =>
   const decipher = createDecipheriv('aes-256-cbc', keyAndIv.subarray(0, 32), keyAndIv.subarray(32));
   const decrypted = Buffer.concat([decipher.update(combined.subarray(256)), decipher.final()]);
   assert.equal(decrypted.toString('utf8'), plaintext);
+  assert.equal(decryptCoinigoPayload(privateKey, encryptCoinigoPayload(publicKey, plaintext)), plaintext);
+  assert.deepEqual(
+    decodeCoinigoBusinessResponse<{ RequestId: number }>(
+      { data: { dataEncrypted: encryptCoinigoPayload(publicKey, JSON.stringify({ data: { RequestId: 42 } })) } },
+      privateKey,
+    ),
+    { RequestId: 42 },
+  );
+});
+
+test('Coinigo token extraction tolerates observed response variants', () => {
+  assert.equal(extractCoinigoAccessToken({ accessToken: 'root-token' }), 'root-token');
+  assert.equal(extractCoinigoAccessToken({ data: { token: 'nested-token' } }), 'nested-token');
+  assert.equal(extractCoinigoAccessToken({ data: { jwt: 'nested-jwt' } }), 'nested-jwt');
+  assert.throws(() => extractCoinigoAccessToken({ data: {} }), /did not contain a token/);
 });
 
 test('B2BROKER is disabled by default and has no guessed endpoint contract', () => {

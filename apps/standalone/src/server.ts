@@ -8,6 +8,7 @@ import {
   createAxisAuthHeaders,
   createCoinigoPayloadDigest,
   encryptCoinigoPayload,
+  extractCoinigoAccessToken,
 } from '@roco/vendor-client';
 
 const required = (name: string): string => {
@@ -41,7 +42,7 @@ const checkAxisClient = async (): Promise<object> => {
   return { ok: true, status: result.status };
 };
 
-const checkCoinigoWallets = async (): Promise<object> => {
+const checkCoinigoWalletsExperimental = async (): Promise<object> => {
   const digestSecret = required('COINIGO_DIGEST_SECRET');
   const authClient = configuredVendorClient('coinigo');
   const auth = await new CoinigoApi(authClient).signIn(
@@ -49,7 +50,7 @@ const checkCoinigoWallets = async (): Promise<object> => {
     required('COINIGO_CLIENT_SECRET'),
     digestSecret,
   );
-  const token = auth.data.data.accessToken;
+  const token = extractCoinigoAccessToken(auth.data);
   const currencyCode = process.env.COINIGO_TEST_CURRENCY ?? 'USDT';
   const plaintext = JSON.stringify({ currencyCode });
   const encrypted = encryptCoinigoPayload(required('COINIGO_PUBLIC_KEY_PEM').replaceAll('\\n', '\n'), plaintext);
@@ -64,7 +65,7 @@ const checkCoinigoWallets = async (): Promise<object> => {
 
 const routes: Record<string, () => Promise<object>> = {
   '/checks/axis/client': checkAxisClient,
-  '/checks/coinigo/wallets': checkCoinigoWallets,
+  '/checks/coinigo/wallets-experimental': checkCoinigoWalletsExperimental,
 };
 
 const server = createServer(async (request, response) => {
