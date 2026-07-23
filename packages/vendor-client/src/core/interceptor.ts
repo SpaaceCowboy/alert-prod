@@ -1,6 +1,6 @@
 import axios, { AxiosHeaders, type AxiosError, type AxiosInstance, type AxiosRequestHeaders, type InternalAxiosRequestConfig } from 'axios';
 import { randomUUID } from 'node:crypto';
-import { classifyHttpStatus, classifyNetworkError } from './classifire.js';
+import { classifyHttpStatus, classifyNetworkError } from './classifier.js';
 import { logVendorCall, type CallLogger } from '../logging/call-log.js';
 import type { Vendor, VendorRequestMetadata } from '../types.js';
 

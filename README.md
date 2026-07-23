@@ -45,6 +45,75 @@ const response = await axis.request({
 Alternatively, construct `AxisApi`, `CoinigoApi`, or `B2BrokerApi` with the configured client and
 use their typed convenience methods. Authentication remains owned by the caller.
 
+The Broctagon helpers use its documented `key` header and HMAC-SHA256 body signature. Coinigo's
+helpers implement its confirmed hybrid format: a random AES-256-CBC key and IV are encrypted with
+the supplied 2048-bit PEM RSA key using PKCS#1 v1.5, concatenated with the AES ciphertext, and the
+complete result is Base64 encoded. The payload digest is HMAC-SHA1/Base64 over the exact plaintext
+JSON. Coinigo does not document an idempotency header for payout creation, so no such header is sent
+and payment writes must not be retried.
+
+## Temporary standalone runner
+
+The standalone app is a development shell around the same library that will later be imported by
+the main middleware. It has no scheduler and performs calls only when explicitly requested. Set the
+relevant values from `.env.example`, build, and start it:
+
+```sh
+npm run build
+npm run start:standalone
+```
+
+It binds to `127.0.0.1:3001` by default. `/healthz` is a local liveness endpoint. Manual read-only
+checks require `GUARDIAN_CONTROL_TOKEN` as a Bearer token:
+
+```sh
+curl -X POST -H "Authorization: Bearer $GUARDIAN_CONTROL_TOKEN" http://127.0.0.1:3001/checks/axis/client
+curl -X POST -H "Authorization: Bearer $GUARDIAN_CONTROL_TOKEN" http://127.0.0.1:3001/checks/coinigo/wallets
+```
+
+Responses expose only success and HTTP status—not vendor response bodies, client data, balances,
+credentials, or wallet addresses. These calls are synthetic and do not replace production baseline
+measurement. B2BROKER is intentionally absent until its official endpoint contract is verified.
+It is disabled by default with `B2BROKER_ENABLED=false`, and its library wrapper exposes no guessed
+endpoint methods. Keep it disabled until the official API paths, authentication, response formats,
+transaction-status lookup, and idempotency guarantees have been reviewed.
+
+## Ubuntu VPS deployment
+
+The production Compose file exposes Guardian only on `127.0.0.1:3001`; PostgreSQL and Redis have no
+host ports. Access it through SSH port forwarding until a private reverse proxy or Cloudflare Access
+is configured.
+
+On the VPS, install Docker Engine with the Compose plugin, copy this repository, then configure it:
+
+```sh
+cp .env.production.example .env.production
+openssl rand -hex 32
+```
+
+Use separate generated values for `POSTGRES_PASSWORD` and `GUARDIAN_CONTROL_TOKEN`. If the database
+password contains URL-special characters, URL-encode it in `DATABASE_URL`. Vendor values may remain
+empty until issued; `/healthz` will still work, but vendor checks will not.
+
+Build and start:
+
+```sh
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
+docker compose --env-file .env.production -f docker-compose.production.yml ps
+curl http://127.0.0.1:3001/healthz
+```
+
+From an administrator workstation, create an SSH tunnel without exposing the port publicly:
+
+```sh
+ssh -L 3001:127.0.0.1:3001 USER@VPS_IP
+```
+
+Then call `http://127.0.0.1:3001` locally. The migration is automatically applied only when the
+PostgreSQL volume is first initialized. For an existing database, apply numbered migrations
+explicitly rather than deleting the volume. Never commit `.env.production` or copy vendor secrets
+into the image.
+
 Logging is fire-and-forget and all logger failures are swallowed. Neither request/response bodies
 nor raw wallet addresses, tokens, or credentials are written to `vendor_calls`.
 

@@ -1,19 +1,18 @@
 {
-    "name": "@roco/vendor-guardian-standalone",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "scripts": {
-      "build": "npm run build -w @roco/vendor-client && tsc -p tsconfig.json",
-      "start": "node dist/server.js"
-    },
-    "dependencies": {
-      "@roco/vendor-client": "*",
-      "axios": "^1.7.9"
-    },
-    "devDependencies": {
-      "@types/node": "^20.17.0",
-      "typescript": "^5.7.2"
-    }
+  "name": "@roco/vendor-guardian-standalone",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@roco/vendor-client": "*",
+    "axios": "^1.7.9"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.7.2"
   }
-  
+}

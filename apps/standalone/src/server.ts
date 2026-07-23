@@ -94,3 +94,15 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('GUARD
 server.listen(port, host, () => {
   console.log(`Vendor Guardian Phase 0 standalone runner listening on http://${host}:${port}`);
 });
+
+const shutdown = (signal: string): void => {
+  console.log(`Received ${signal}; shutting down`);
+  server.close((error) => {
+    if (error) {
+      console.error('Standalone runner shutdown failed');
+      process.exitCode = 1;
+    }
+  });
+};
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
