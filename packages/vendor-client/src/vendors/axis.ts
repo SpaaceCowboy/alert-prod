@@ -1,6 +1,7 @@
 import type { AxiosInstance, AxiosResponse } from 'axios';
 import { createHmac } from 'node:crypto';
 import { VendorApi } from './base.js';
+import type { VendorRequestExecutor } from '../core/executor.js';
 
 export interface AxisClient { id: string; [key: string]: unknown }
 export interface AxisKycField { key: string; type: string; [key: string]: unknown }
@@ -12,7 +13,7 @@ export const createAxisSignature = (apiKey: string, serializedBody: string): str
   `sha256=${createHmac('sha256', apiKey).update(serializedBody, 'utf8').digest('hex')}`;
 
 export class AxisApi extends VendorApi {
-  public constructor(client: AxiosInstance) { super(client); }
+  public constructor(client: AxiosInstance, executor?: VendorRequestExecutor) { super(client, executor); }
   getClient(clientId: string): Promise<AxiosResponse<AxisClient>> {
     return this.request('axis.client.get', { method: 'GET', url: `/public/v1/users/${encodeURIComponent(clientId)}` });
   }

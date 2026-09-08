@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run build --workspaces --if-present && (cd packages/vendor-client && node --test --test-concurrency=1 dist/core/*.test.js dist/expectations/*.test.js dist/vendors/*.test.js) && (cd apps/worker && node --test --test-concurrency=1 dist/jobs/*.test.js)",
     "report": "tsx scripts/report.ts",
     "start:standalone": "npm run start --workspace @roco/vendor-guardian-standalone"
   },

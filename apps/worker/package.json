@@ -1,5 +1,5 @@
 {
-  "name": "@roco/vendor-client",
+  "name": "@roco/vendor-guardian-worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,12 +13,12 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test --test-concurrency=1 dist/**/*.test.js"
+    "test": "npm run build && node --test dist/**/*.test.js"
   },
   "dependencies": {
-    "axios": "^1.7.9",
+    "@roco/vendor-client": "*",
+    "bullmq": "^5.80.12",
     "ioredis": "^5.11.1",
-    "opossum": "^9.0.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {

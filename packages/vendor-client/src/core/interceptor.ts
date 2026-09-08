@@ -1,8 +1,8 @@
 import axios, { AxiosHeaders, type AxiosError, type AxiosInstance, type AxiosRequestHeaders, type InternalAxiosRequestConfig } from 'axios';
 import { randomUUID } from 'node:crypto';
-import { classifyHttpStatus, classifyNetworkError } from './classifier.js';
+import { classifyVendorCall } from './classifier.js';
 import { logVendorCall, type CallLogger } from '../logging/call-log.js';
-import type { Vendor, VendorRequestMetadata } from '../types.js';
+import type { UnknownPaymentCall, Vendor, VendorRequestMetadata } from '../types.js';
 
 type InstrumentedConfig = InternalAxiosRequestConfig & {
   vendorMetadata?: VendorRequestMetadata;
@@ -18,6 +18,7 @@ export const attachVendorInterceptors = (
   client: AxiosInstance,
   vendor: Vendor,
   logger: CallLogger = logVendorCall,
+  instrumentation: VendorInstrumentationOptions = {},
 ): AxiosInstance => {
   client.interceptors.request.use((config: InstrumentedConfig) => {
     if (!config.vendorMetadata?.endpoint) {
@@ -35,6 +36,12 @@ export const attachVendorInterceptors = (
     const metadata = config.vendorMetadata;
     if (!timing || !metadata) return;
     const latencyMs = Math.max(0, Math.round(Number(process.hrtime.bigint() - timing.startedAt) / 1_000_000));
+    const classification = classifyVendorCall({
+      status,
+      latencyMs,
+      error,
+      p95LatencyMs: instrumentation.getP95LatencyMs?.(vendor, metadata.endpoint),
+    });
     try {
       const logging = logger({
         vendor,
@@ -42,7 +49,7 @@ export const attachVendorInterceptors = (
         method: (config.method ?? 'GET').toUpperCase(),
         http_status: status,
         latency_ms: latencyMs,
-        classification: status === null && error ? classifyNetworkError(error) : status === null ? null : classifyHttpStatus(status),
+        classification,
         error_class: error?.code ?? (error ? error.name : null),
         idempotency_key_present: hasIdempotencyKey(config.headers),
         request_id: timing.requestId,
@@ -52,6 +59,25 @@ export const attachVendorInterceptors = (
       if (logging && typeof logging.catch === 'function') void logging.catch(() => undefined);
     } catch {
       // Custom loggers are held to the same non-blocking/non-breaking boundary.
+    }
+    if (
+      classification === 'UNKNOWN' &&
+      metadata.isPaymentWrite &&
+      metadata.paymentReference &&
+      (vendor === 'coinigo' || vendor === 'b2broker')
+    ) {
+      try {
+        const handling = instrumentation.onUnknownPayment?.({
+          vendor,
+          endpoint: metadata.endpoint,
+          requestId: timing.requestId,
+          vendorReference: metadata.paymentReference,
+          occurredAt: new Date().toISOString(),
+        });
+        if (handling && typeof handling.catch === 'function') void handling.catch(() => undefined);
+      } catch {
+        // Verification enqueue failures cannot alter the original payment response/error.
+      }
     }
   };
 
@@ -72,4 +98,10 @@ export const createVendorClient = (
   vendor: Vendor,
   options: { baseURL: string; timeout: number; headers?: Record<string, string> },
   logger: CallLogger = logVendorCall,
-): AxiosInstance => attachVendorInterceptors(axios.create(options), vendor, logger);
+  instrumentation: VendorInstrumentationOptions = {},
+): AxiosInstance => attachVendorInterceptors(axios.create(options), vendor, logger, instrumentation);
+
+export interface VendorInstrumentationOptions {
+  getP95LatencyMs?: (vendor: Vendor, endpoint: string) => number | undefined;
+  onUnknownPayment?: (call: UnknownPaymentCall) => void | Promise<void>;
+}

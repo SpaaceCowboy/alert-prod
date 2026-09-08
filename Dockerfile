@@ -5,6 +5,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/vendor-client/package.json packages/vendor-client/package.json
 COPY apps/standalone/package.json apps/standalone/package.json
+COPY apps/worker/package.json apps/worker/package.json
 RUN npm ci
 
 COPY tsconfig.base.json ./
@@ -12,6 +13,8 @@ COPY packages/vendor-client/tsconfig.json packages/vendor-client/tsconfig.json
 COPY packages/vendor-client/src packages/vendor-client/src
 COPY apps/standalone/tsconfig.json apps/standalone/tsconfig.json
 COPY apps/standalone/src apps/standalone/src
+COPY apps/worker/tsconfig.json apps/worker/tsconfig.json
+COPY apps/worker/src apps/worker/src
 RUN npm run build && npm prune --omit=dev
 
 FROM node:20-alpine AS runtime
@@ -25,6 +28,8 @@ COPY --from=build /app/packages/vendor-client/package.json ./packages/vendor-cli
 COPY --from=build /app/packages/vendor-client/dist ./packages/vendor-client/dist
 COPY --from=build /app/apps/standalone/package.json ./apps/standalone/package.json
 COPY --from=build /app/apps/standalone/dist ./apps/standalone/dist
+COPY --from=build /app/apps/worker/package.json ./apps/worker/package.json
+COPY --from=build /app/apps/worker/dist ./apps/worker/dist
 
 USER node
 EXPOSE 3001

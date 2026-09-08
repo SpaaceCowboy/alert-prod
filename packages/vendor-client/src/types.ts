@@ -1,7 +1,8 @@
 import type { AxiosRequestConfig } from 'axios';
 
 export type Vendor = 'axis' | 'coinigo' | 'b2broker';
-export type Phase0Classification = 'OK' | 'HARD_FAIL' | 'AUTH' | 'RATE_LIMIT' | 'UNKNOWN';
+export type VendorClassification = 'OK' | 'HARD_FAIL' | 'AUTH' | 'RATE_LIMIT' | 'UNKNOWN' | 'SLOW';
+export type Phase0Classification = Exclude<VendorClassification, 'SLOW'>;
 
 export interface VendorCallRecord {
   vendor: Vendor;
@@ -9,7 +10,7 @@ export interface VendorCallRecord {
   method: string;
   http_status: number | null;
   latency_ms: number;
-  classification: Phase0Classification | null;
+  classification: VendorClassification | null;
   error_class: string | null;
   idempotency_key_present: boolean;
   request_id: string;
@@ -22,6 +23,16 @@ export interface VendorRequestMetadata {
   requestId?: string;
   actorId?: string;
   actionType?: string;
+  isPaymentWrite?: boolean;
+  paymentReference?: string;
+}
+
+export interface UnknownPaymentCall {
+  vendor: Extract<Vendor, 'coinigo' | 'b2broker'>;
+  endpoint: string;
+  requestId: string;
+  vendorReference: string;
+  occurredAt: string;
 }
 
 export type VendorRequestConfig<D = unknown> = AxiosRequestConfig<D> & {

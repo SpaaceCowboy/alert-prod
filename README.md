@@ -52,7 +52,12 @@ complete result is Base64 encoded. The payload digest is HMAC-SHA1/Base64 over t
 JSON. Coinigo does not document an idempotency header for payout creation, so no such header is sent
 and payment writes must not be retried.
 
-## Temporary standalone runner
+## Standalone Phase 0 measurement runner
+
+When the calling middleware is not available, the standalone app provides operator-triggered,
+read-only synthetic checks. It records those checks in vendor_calls, but it cannot passively observe
+traffic made by another service. Apply 0001_vendor_calls.sql before using checks if measurements
+must be retained.
 
 The standalone app is a development shell around the same library that will later be imported by
 the main middleware. It has no scheduler and performs calls only when explicitly requested. Set the
@@ -67,7 +72,10 @@ It binds to `127.0.0.1:3001` by default. `/healthz` is a local liveness endpoint
 checks require `GUARDIAN_CONTROL_TOKEN` as a Bearer token:
 
 ```sh
+curl http://127.0.0.1:3001/readyz
 curl -X POST -H "Authorization: Bearer $GUARDIAN_CONTROL_TOKEN" http://127.0.0.1:3001/checks/axis/client
+curl -X POST -H "Authorization: Bearer $GUARDIAN_CONTROL_TOKEN" http://127.0.0.1:3001/checks/axis/kyc
+curl -X POST -H "Authorization: Bearer $GUARDIAN_CONTROL_TOKEN" http://127.0.0.1:3001/checks/coinigo/auth
 curl -X POST -H "Authorization: Bearer $GUARDIAN_CONTROL_TOKEN" http://127.0.0.1:3001/checks/coinigo/wallets-experimental
 ```
 
@@ -115,6 +123,25 @@ Then call `http://127.0.0.1:3001` locally. The migration is automatically applie
 PostgreSQL volume is first initialized. For an existing database, apply numbered migrations
 explicitly rather than deleting the volume. Never commit `.env.production` or copy vendor secrets
 into the image.
+
+## Phase 1 development mode
+
+Phase 1 is implemented with mocked tests but remains disabled by default with
+`PHASE1_ENABLED=false`. It includes the exact `0002_expectations.sql` schema, policy-gated retry
+executor, independent Opossum breakers with a Redis health gate, Phase 0 p95 baseline cache,
+expectation producers/sweeper, and UNKNOWN-payment verification jobs.
+
+For an existing Phase 0 PostgreSQL volume, apply the Phase 1 migration explicitly:
+
+```sh
+docker compose --env-file .env.production -f docker-compose.production.yml \
+  exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"' \
+  < migrations/0002_expectations.sql
+```
+
+Do not set `PHASE1_ENABLED=true` yet. The worker factories require real vendor status adapters,
+and breaker/SLOW thresholds require Phase 0 measurements. Payment writes remain `NEVER_RETRY`;
+timeouts are classified `UNKNOWN` and only status verification is permitted.
 
 Logging is fire-and-forget and all logger failures are swallowed. Neither request/response bodies
 nor raw wallet addresses, tokens, or credentials are written to `vendor_calls`.

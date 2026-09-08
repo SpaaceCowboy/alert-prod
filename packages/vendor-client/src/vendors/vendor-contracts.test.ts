@@ -51,7 +51,7 @@ test('Coinigo uses documented sign-in, wallet and payout paths', async () => {
   await api.signIn('client', 'secret', 'digest');
   await api.getWallets('encrypted-query', 'wallet-digest', 'USDT');
   await api.getPayouts('encrypted-query', 'payout-digest');
-  await api.createWithdrawal({ dataEncrypted: 'encrypted-body' }, 'payload-digest');
+  await api.createWithdrawal({ dataEncrypted: 'encrypted-body' }, 'payload-digest', 'REF-SYNTHETIC');
 
   assert.deepEqual(captured.map(({ method, url }) => [method, url]), [
     ['post', '/ipg/sign-in'],

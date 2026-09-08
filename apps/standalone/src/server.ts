@@ -1,12 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import axios from 'axios';
+import { Pool } from 'pg';
 import {
   AxisApi,
   CoinigoApi,
   configuredVendorClient,
   createAxisAuthHeaders,
   createCoinigoPayloadDigest,
+  createCallLogger,
   encryptCoinigoPayload,
   extractCoinigoAccessToken,
 } from '@roco/vendor-client';
@@ -29,6 +31,11 @@ const json = (response: ServerResponse, status: number, body: object): void => {
   response.end(JSON.stringify(body));
 };
 
+// Standalone mode is useful without a database for liveness, but vendor checks must
+// have DATABASE_URL configured if their measurements are expected to be retained.
+const database = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL }) : undefined;
+const logger = database ? createCallLogger(database) : undefined;
+
 const safeError = (error: unknown): { ok: false; status?: number; errorClass: string } => {
   if (axios.isAxiosError(error)) {
     return { ok: false, ...(error.response?.status ? { status: error.response.status } : {}), errorClass: error.code ?? error.name };
@@ -37,14 +44,30 @@ const safeError = (error: unknown): { ok: false; status?: number; errorClass: st
 };
 
 const checkAxisClient = async (): Promise<object> => {
-  const client = configuredVendorClient('axis', createAxisAuthHeaders(required('AXIS_API_KEY')));
+  const client = configuredVendorClient('axis', createAxisAuthHeaders(required('AXIS_API_KEY')), logger);
   const result = await new AxisApi(client).getClient(required('AXIS_TEST_CLIENT_ID'));
+  return { ok: true, status: result.status };
+};
+
+const checkAxisKyc = async (): Promise<object> => {
+  const client = configuredVendorClient('axis', createAxisAuthHeaders(required('AXIS_API_KEY')), logger);
+  const result = await new AxisApi(client).getKycStatus(required('AXIS_TEST_CLIENT_ID'));
+  return { ok: true, status: result.status };
+};
+
+const checkCoinigoAuth = async (): Promise<object> => {
+  const client = configuredVendorClient('coinigo', {}, logger);
+  const result = await new CoinigoApi(client).signIn(
+    required('COINIGO_CLIENT_ID'),
+    required('COINIGO_CLIENT_SECRET'),
+    required('COINIGO_DIGEST_SECRET'),
+  );
   return { ok: true, status: result.status };
 };
 
 const checkCoinigoWalletsExperimental = async (): Promise<object> => {
   const digestSecret = required('COINIGO_DIGEST_SECRET');
-  const authClient = configuredVendorClient('coinigo');
+  const authClient = configuredVendorClient('coinigo', {}, logger);
   const auth = await new CoinigoApi(authClient).signIn(
     required('COINIGO_CLIENT_ID'),
     required('COINIGO_CLIENT_SECRET'),
@@ -65,12 +88,27 @@ const checkCoinigoWalletsExperimental = async (): Promise<object> => {
 
 const routes: Record<string, () => Promise<object>> = {
   '/checks/axis/client': checkAxisClient,
+  '/checks/axis/kyc': checkAxisKyc,
+  '/checks/coinigo/auth': checkCoinigoAuth,
   '/checks/coinigo/wallets-experimental': checkCoinigoWalletsExperimental,
 };
 
 const server = createServer(async (request, response) => {
   if (request.method === 'GET' && request.url === '/healthz') {
     json(response, 200, { ok: true, mode: 'phase-0-standalone' });
+    return;
+  }
+  if (request.method === 'GET' && request.url === '/readyz') {
+    if (!database) {
+      json(response, 503, { ok: false, error: 'database_not_configured' });
+      return;
+    }
+    try {
+      await database.query('select 1', []);
+      json(response, 200, { ok: true, database: 'ready', mode: 'phase-0-standalone' });
+    } catch {
+      json(response, 503, { ok: false, error: 'database_unavailable' });
+    }
     return;
   }
   const handler = request.url ? routes[request.url] : undefined;
@@ -102,7 +140,9 @@ const shutdown = (signal: string): void => {
     if (error) {
       console.error('Standalone runner shutdown failed');
       process.exitCode = 1;
+      return;
     }
+    void database?.end().catch(() => { process.exitCode = 1; });
   });
 };
 process.once('SIGTERM', () => shutdown('SIGTERM'));

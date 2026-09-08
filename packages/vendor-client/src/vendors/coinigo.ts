@@ -10,6 +10,7 @@ import {
   randomBytes,
 } from 'node:crypto';
 import { VendorApi } from './base.js';
+import type { VendorRequestExecutor } from '../core/executor.js';
 
 export interface CoinigoApiResponse<T> { requestId: string; apiVersion?: string | null; data: T }
 export interface CoinigoAccessToken { accessToken: string; tokenType: string; expiresIn: number }
@@ -135,7 +136,7 @@ export const extractCoinigoAccessToken = (response: unknown): string => {
 };
 
 export class CoinigoApi extends VendorApi {
-  public constructor(client: AxiosInstance) { super(client); }
+  public constructor(client: AxiosInstance, executor?: VendorRequestExecutor) { super(client, executor); }
 
   signIn(clientId: string, clientSecret: string, digestSecret: string): Promise<AxiosResponse<unknown>> {
     const credentials = { clientId, clientSecret };
@@ -169,12 +170,20 @@ export class CoinigoApi extends VendorApi {
     });
   }
 
-  createWithdrawal(encryptedPayload: CoinigoEncryptedPayload, payloadDigest: string): Promise<AxiosResponse<CoinigoEncryptedPayload>> {
+  createWithdrawal(
+    encryptedPayload: CoinigoEncryptedPayload,
+    payloadDigest: string,
+    vendorReference: string,
+  ): Promise<AxiosResponse<CoinigoEncryptedPayload>> {
     return this.request('coinigo.withdrawal.create', {
       method: 'POST',
       url: '/ipg/crypto/pay-outs/requests',
       data: { data: encryptedPayload },
       headers: { 'X-Payload-Digest': payloadDigest },
+    }, {
+      isPaymentWrite: true,
+      paymentReference: vendorReference,
+      actionType: 'withdrawal',
     });
   }
 }

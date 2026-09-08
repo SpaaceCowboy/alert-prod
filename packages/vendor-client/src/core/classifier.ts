@@ -1,4 +1,4 @@
-import type { Phase0Classification } from '../types.js';
+import type { Phase0Classification, VendorClassification } from '../types.js';
 
 export const classifyHttpStatus = (status: number): Phase0Classification | null => {
   if (status >= 200 && status < 300) return 'OK';
@@ -15,3 +15,27 @@ export const isTimeoutError = (error: { code?: string; message?: string }): bool
 
 export const classifyNetworkError = (error: { code?: string; message?: string }): Phase0Classification =>
   isTimeoutError(error) ? 'UNKNOWN' : 'HARD_FAIL';
+
+export interface ClassificationInput {
+  status: number | null;
+  latencyMs: number;
+  error?: { code?: string; message?: string };
+  p95LatencyMs?: number;
+}
+
+export const classifyVendorCall = (input: ClassificationInput): VendorClassification | null => {
+  const base = input.status === null && input.error
+    ? classifyNetworkError(input.error)
+    : input.status === null
+      ? null
+      : classifyHttpStatus(input.status);
+  if (
+    base === 'OK' &&
+    input.p95LatencyMs !== undefined &&
+    input.p95LatencyMs > 0 &&
+    input.latencyMs > input.p95LatencyMs
+  ) {
+    return 'SLOW';
+  }
+  return base;
+};
