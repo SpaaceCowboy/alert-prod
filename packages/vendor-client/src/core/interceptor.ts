@@ -21,12 +21,16 @@ export const attachVendorInterceptors = (
   instrumentation: VendorInstrumentationOptions = {},
 ): AxiosInstance => {
   client.interceptors.request.use((config: InstrumentedConfig) => {
-    if (!config.vendorMetadata?.endpoint) {
+    const metadata = config.vendorMetadata;
+    if (!metadata?.endpoint) {
       throw new Error('vendorMetadata.endpoint (a logical endpoint name) is required');
+    }
+    if (metadata.isPaymentWrite && (!metadata.paymentReference || metadata.paymentReference.trim() === '')) {
+      throw new Error('Payment writes require vendorMetadata.paymentReference for timeout reconciliation');
     }
     config.vendorTiming = {
       startedAt: process.hrtime.bigint(),
-      requestId: config.vendorMetadata.requestId ?? randomUUID(),
+      requestId: metadata.requestId ?? randomUUID(),
     };
     return config;
   });

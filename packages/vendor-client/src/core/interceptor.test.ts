@@ -48,3 +48,25 @@ test('a payment timeout is UNKNOWN and enqueues verification without changing th
   assert.equal(rows[0]?.classification, 'UNKNOWN');
   assert.deepEqual(unknown, ['REF-SYNTHETIC']);
 });
+
+test('a payment write without a vendor reference is rejected before dialing', async () => {
+  let calls = 0;
+  const client = createVendorClient('coinigo', { baseURL: 'https://unused.invalid', timeout: 100 });
+  const adapter: AxiosAdapter = async (config) => {
+    calls += 1;
+    return { data: {}, status: 200, statusText: 'OK', headers: {}, config };
+  };
+  await assert.rejects(
+    client.request({
+      method: 'POST',
+      url: '/payout',
+      adapter,
+      vendorMetadata: {
+        endpoint: 'coinigo.withdrawal.create',
+        isPaymentWrite: true,
+      },
+    } as VendorRequestConfig),
+    /paymentReference/,
+  );
+  assert.equal(calls, 0);
+});
