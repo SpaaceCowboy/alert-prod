@@ -26,6 +26,7 @@ test('Phase 1 executor applies retries only through the endpoint registry', asyn
   const client = createVendorClient('axis', { baseURL: 'https://unused.invalid', timeout: 100 });
   client.defaults.adapter = adapter;
   const executor = createPhase1VendorExecutor('axis', client, new RedisUp(), {
+    enabled: true,
     sleep: async () => undefined,
     breaker: { volumeThreshold: 10 },
   });
@@ -47,9 +48,18 @@ test('Phase 1 executor never retries an unlisted write', async () => {
   const client = createVendorClient('coinigo', { baseURL: 'https://unused.invalid', timeout: 100 });
   client.defaults.adapter = adapter;
   const executor = createPhase1VendorExecutor('coinigo', client, new RedisUp(), {
+    enabled: true,
     sleep: async () => undefined,
   });
   await assert.rejects(executor.request('coinigo.withdrawal.create', { method: 'POST', url: '/payout' }));
   assert.equal(attempts, 1);
   executor.shutdown();
+});
+
+test('Phase 1 executor is disabled unless explicitly enabled', () => {
+  const client = createVendorClient('axis', { baseURL: 'https://unused.invalid', timeout: 100 });
+  assert.throws(
+    () => createPhase1VendorExecutor('axis', client, new RedisUp(), { enabled: false }),
+    /PHASE1_ENABLED=true/,
+  );
 });

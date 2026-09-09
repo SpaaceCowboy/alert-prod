@@ -1,5 +1,6 @@
 import { AxiosHeaders, type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios';
 import type { Vendor, VendorRequestConfig, VendorRequestMetadata } from '../types.js';
+import { isPhase1Enabled } from '../config/phase1.js';
 import { createVendorBreaker, type RedisHealthGate, type VendorBreaker } from './breaker.js';
 import { executeWithRetry } from './retry.js';
 
@@ -18,6 +19,11 @@ interface BreakerInput {
 }
 
 export interface Phase1ExecutorOptions {
+  /**
+   * Explicit escape hatch for tests and controlled composition. Production callers
+   * should leave this unset so PHASE1_ENABLED remains the gate.
+   */
+  enabled?: boolean;
   healthTtlSeconds?: number;
   breaker?: {
     timeout?: number;
@@ -50,6 +56,9 @@ export const createPhase1VendorExecutor = (
   redis: RedisHealthGate,
   options: Phase1ExecutorOptions = {},
 ): VendorRequestExecutor => {
+  if (!(options.enabled ?? isPhase1Enabled())) {
+    throw new Error('Phase 1 executor is disabled; set PHASE1_ENABLED=true before constructing it');
+  }
   const breaker: VendorBreaker<BreakerInput, AxiosResponse> = createVendorBreaker({
     vendor,
     redis,

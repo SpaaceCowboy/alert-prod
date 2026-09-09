@@ -130,6 +130,8 @@ Phase 1 is implemented with mocked tests but remains disabled by default with
 `PHASE1_ENABLED=false`. It includes the exact `0002_expectations.sql` schema, policy-gated retry
 executor, independent Opossum breakers with a Redis health gate, Phase 0 p95 baseline cache,
 expectation producers/sweeper, and UNKNOWN-payment verification jobs.
+The Phase 1 executor now refuses construction unless PHASE1_ENABLED=true; this is enforced at the
+library boundary, not only by deployment convention.
 
 For an existing Phase 0 PostgreSQL volume, apply the Phase 1 migration explicitly:
 
